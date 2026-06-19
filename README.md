@@ -28,7 +28,7 @@ OMEGA is a digital employee that lives in your terminal. It autonomously plans, 
 ## Quick Start
 
 ```bash
-git clone <https://github.com/senthilssettai-creator/omega-ai-agent>
+git clone https://github.com/senthilssettai-creator/omega-ai-agent
 cd ~/omega
 bash install.ps1
 # Edit .env and add your free OpenRouter API key from https://openrouter.ai/keys
