@@ -1,0 +1,82 @@
+version: "3.9"
+
+services:
+  omega:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: omega-agent:latest
+    container_name: omega
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - API_HOST=0.0.0.0
+      - API_PORT=8888
+    volumes:
+      - omega_data:/home/omega/.omega
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - omega_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: omega_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - omega_network
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: omega_chromadb
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - omega_network
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: omega-agent:latest
+    container_name: omega_celery_worker
+    restart: unless-stopped
+    command: ["celery", "-A", "omega.workflows.celery_app", "worker", "--loglevel=info"]
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - omega_data:/home/omega/.omega
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - omega_network
+
+volumes:
+  omega_data:
+  redis_data:
+  chroma_data:
+
+networks:
+  omega_network:
+    driver: bridge
