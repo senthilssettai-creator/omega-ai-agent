@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """OMEGA Terminal UI - Rich-powered beautiful terminal interface"""
 
 import asyncio
@@ -84,8 +85,8 @@ class OmegaUI:
                        f"{memory_stats.get('memories', 0)} memories · {memory_stats.get('episodes', 0)} episodes")
         table.add_row("Model Router", "[green]● Ready[/green]",
                        "Auto-selects best free OpenRouter model")
-        table.add_row("Agents", "[green]● 7 Active[/green]",
-                       "Planner · Researcher · Coder · Browser · DevOps · Executor · Critic")
+        table.add_row("Agents", "[green]● 8 Active[/green]",
+                       "Planner · Researcher · Coder · Browser · DevOps · Executor · Critic · MCP")
         table.add_row("Plugins", "[green]● Loaded[/green]",
                        "Filesystem · Terminal · Git · Search · Browser · Docker · API · DB")
         table.add_row("Security", "[green]● Active[/green]",
@@ -124,10 +125,16 @@ class OmegaUI:
   [cyan]>[/cyan] [white]status[/white]                            Show system status
   [cyan]>[/cyan] [white]models[/white]                            List available free models
   [cyan]>[/cyan] [white]plugins[/white]                           List loaded plugins
-  [cyan]>[/cyan] [white]mcp list[/white]                          List MCP servers
-  [cyan]>[/cyan] [white]mcp add <name> <url>[/white]              Add MCP server
+  [cyan]>[/cyan] [white]mcp list[/white]                          List all saved MCP servers
+  [cyan]>[/cyan] [white]mcp add[/white]                           Interactive wizard to add a server
+  [cyan]>[/cyan] [white]mcp add <json-config>[/white]             Add server(s) from JSON inline
+  [cyan]>[/cyan] [white]mcp use[/white]                           Pick a server and run a prompt with it
+  [cyan]>[/cyan] [white]mcp remove <name>[/white]               Remove a saved server
   [cyan]>[/cyan] [white]clear[/white]                             Clear screen
   [cyan]>[/cyan] [white]exit[/white]                              Exit OMEGA
+
+[bold]JSON config format (Claude / Cursor style)[/bold]
+  [dim]{"mcpServers":{"my-server":{"command":"npx","args":["-y","pkg@latest"]}}}[/dim]
 """
         self.console.print(Panel(help_text.strip(), title="[bold cyan]Help[/bold cyan]",
                                   border_style="cyan"))
@@ -178,6 +185,7 @@ class OmegaUI:
             "devops": "⚙️",
             "executor": "⚡",
             "critic": "🔬",
+            "mcp": "🔌",
             "memory": "💾",
         }
         return icons.get(agent, "🤖")

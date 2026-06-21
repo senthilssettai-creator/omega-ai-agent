@@ -1,0 +1,72 @@
+- generic [ref=e2]:
+  - navigation [ref=e3]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - link "Gmail" [ref=e8] [cursor=pointer]:
+          - /url: https://mail.google.com/mail/&ogbl
+        - link "البحث عن صور" [ref=e10] [cursor=pointer]:
+          - /url: https://www.google.com/imghp?hl=ar&ogbl
+          - text: صور
+      - button "تطبيقات Google" [ref=e13] [cursor=pointer]:
+        - img [ref=e14]
+      - link "تسجيل الدخول" [ref=e18] [cursor=pointer]:
+        - /url: https://accounts.google.com/ServiceLogin?hl=ar&passive=true&continue=https://www.google.com/&ec=futura_exp_og_so_72776762_e
+  - generic [ref=e20]:
+    - 'link "كأس العالم 2026: فنّ تسديد ركلات الجزاء" [ref=e22] [cursor=pointer]':
+      - /url: /search?sca_esv=265768d7d1a792dc&q=%D9%83%D8%A3%D8%B3+%D8%A7%D9%84%D8%B9%D8%A7%D9%84%D9%85+FIFA+2026&oi=ddle&noiga=1&ct=460194180&hl=ar&stick=H4sIAAAAAAAC_-NgVuLQz9U3MDYoNJ_AwriIVfZm843FNzYr3Fh-s-XGThB5s1XBzdPNUcHIwMgMAFgYLTYvAAAA&sa=X&ved=0ahUKEwjRlbmuw5eVAxW0VUEAHYyFAAYQPQgE
+      - 'img "كأس العالم 2026: فنّ تسديد ركلات الجزاء" [ref=e24]'
+    - button "مشاركة" [ref=e26]:
+      - generic "مشاركة" [ref=e27] [cursor=pointer]:
+        - img [ref=e31]
+  - search [ref=e34]:
+    - generic [ref=e36]:
+      - generic [ref=e38]:
+        - button "إضافة الملفات والأدوات" [ref=e41] [cursor=pointer]:
+          - img [ref=e43]
+        - combobox "بحث" [active] [ref=e46]
+        - generic [ref=e47]:
+          - generic [ref=e48]:
+            - button "أدوات الإدخال" [ref=e49] [cursor=pointer]:
+              - img [ref=e51]
+            - button "البحث الصوتي" [ref=e53] [cursor=pointer]:
+              - img [ref=e54]
+            - button "بحث بالصور" [ref=e56] [cursor=pointer]:
+              - img [ref=e57]
+          - link "وضع AI" [ref=e59] [cursor=pointer]:
+            - generic [ref=e61]:
+              - img [ref=e63]
+              - generic [ref=e70]: وضع AI
+      - generic [ref=e72]:
+        - button "بحث Google‏" [ref=e73] [cursor=pointer]
+        - button "ضربة حظ" [ref=e74] [cursor=pointer]
+  - generic [ref=e77]:
+    - text: "محرّك بحث Google متوفّر باللغة:"
+    - link "فارسی" [ref=e78] [cursor=pointer]:
+      - /url: https://www.google.com/setprefs?sig=0_cf0MCRuzNm_mCGbBoHCCsfTFQJA%3D&hl=fa&source=homepage&sa=X&ved=0ahUKEwjRlbmuw5eVAxW0VUEAHYyFAAYQ2ZgBCDc
+    - link "English" [ref=e79] [cursor=pointer]:
+      - /url: https://www.google.com/setprefs?sig=0_cf0MCRuzNm_mCGbBoHCCsfTFQJA%3D&hl=en&source=homepage&sa=X&ved=0ahUKEwjRlbmuw5eVAxW0VUEAHYyFAAYQ2ZgBCDg
+    - link "हिन्दी" [ref=e80] [cursor=pointer]:
+      - /url: https://www.google.com/setprefs?sig=0_cf0MCRuzNm_mCGbBoHCCsfTFQJA%3D&hl=hi&source=homepage&sa=X&ved=0ahUKEwjRlbmuw5eVAxW0VUEAHYyFAAYQ2ZgBCDk
+    - link "اردو" [ref=e81] [cursor=pointer]:
+      - /url: https://www.google.com/setprefs?sig=0_cf0MCRuzNm_mCGbBoHCCsfTFQJA%3D&hl=ur&source=homepage&sa=X&ved=0ahUKEwjRlbmuw5eVAxW0VUEAHYyFAAYQ2ZgBCDo
+  - contentinfo [ref=e83]:
+    - generic [ref=e84]: الإمارات العربية المتحدة
+    - generic [ref=e85]:
+      - generic [ref=e86]:
+        - link "لمحة" [ref=e87] [cursor=pointer]:
+          - /url: https://about.google/?utm_source=google-AE&utm_medium=referral&utm_campaign=hp-footer&fg=1
+        - link "الإعلانات" [ref=e88] [cursor=pointer]:
+          - /url: https://www.google.com/intl/ar_ae/ads/?subid=ww-ww-et-g-awa-a-g_hpafoot1_1!o2&utm_source=google.com&utm_medium=referral&utm_campaign=google_hpafooter&fg=1
+        - link "الأعمال" [ref=e89] [cursor=pointer]:
+          - /url: https://www.google.com/services/?subid=ww-ww-et-g-awa-a-g_hpbfoot1_1!o2&utm_source=google.com&utm_medium=referral&utm_campaign=google_hpbfooter&fg=1
+        - link "آلية عمل \"بحث Google\"" [ref=e90] [cursor=pointer]:
+          - /url: https://google.com/search/howsearchworks/?fg=1
+      - 'link "العقد الثالث من نشاطنا في مجال المناخ: تحقق من عملنا" [ref=e92] [cursor=pointer]':
+        - /url: https://sustainability.google/intl/ar/carbon-free/?utm_source=googlehpfooter&utm_medium=housepromos&utm_campaign=bottom-footer&utm_content=
+      - generic [ref=e93]:
+        - link "الخصوصية" [ref=e94] [cursor=pointer]:
+          - /url: https://policies.google.com/privacy?hl=ar-AE&fg=1
+        - link "البنود" [ref=e95] [cursor=pointer]:
+          - /url: https://policies.google.com/terms?hl=ar-AE&fg=1
+        - button "الإعدادات" [ref=e99] [cursor=pointer]:
+          - generic [ref=e100]: الإعدادات

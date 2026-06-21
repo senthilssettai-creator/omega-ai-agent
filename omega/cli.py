@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """OMEGA CLI - Main entry point for the terminal application"""
 
 import asyncio
@@ -139,19 +140,30 @@ async def _interactive_loop():
             if not servers:
                 ui.console.print("[dim]No MCP servers connected.[/dim]")
             for name, server in servers.items():
-                ui.console.print(f"[cyan]●[/cyan] {name} - {len(server.tools)} tools")
+                status = "[green]connected[/green]" if server.connected else "[dim]saved[/dim]"
+                ui.console.print(f"[cyan]●[/cyan] [bold]{name}[/bold] — {status} · {len(server.tools)} tools")
+
+        elif cmd_lower == "mcp add":
+            # Interactive wizard — no inline args
+            await _handle_mcp_add_interactive()
 
         elif cmd_lower.startswith("mcp add "):
-            parts = user_input[8:].split()
-            if len(parts) >= 2:
-                name, url = parts[0], parts[1]
-                connected = await mcp_manager.add_server(name=name, url=url)
-                if connected:
-                    ui.success(f"Connected to MCP server: {name}")
-                else:
-                    ui.error(f"Could not connect to: {name}")
+            raw = user_input[8:].strip()
+            await _handle_mcp_add(raw)
+
+        elif cmd_lower == "mcp use":
+            await _handle_mcp_use()
+
+        elif cmd_lower.startswith("mcp remove "):
+            name = user_input[11:].strip()
+            if not name:
+                ui.error("Usage: mcp remove <name>")
             else:
-                ui.error("Usage: mcp add <name> <url>")
+                removed = await mcp_manager.remove_server(name)
+                if removed:
+                    ui.success(f"Removed MCP server: {name}")
+                else:
+                    ui.error(f"Server not found: {name}")
 
         elif cmd_lower.startswith("research "):
             topic = user_input[9:]
@@ -185,6 +197,300 @@ async def _interactive_loop():
             await _execute_goal_flow(user_input)
 
         ui.console.print()
+
+
+async def _handle_mcp_add_interactive():
+    """Step-by-step interactive wizard for adding an MCP server."""
+    from omega.mcp.manager import mcp_manager
+
+    ui.console.print(
+        "\n[bold cyan]MCP Server Setup Wizard[/bold cyan]\n"
+        "[dim]Follow the prompts below. Press Ctrl+C to cancel.[/dim]\n"
+    )
+
+    # ── Step 1: Name ──────────────────────────────────────────────────────────
+    try:
+        name = await asyncio.to_thread(
+            Prompt.ask, "[bold cyan]  Step 1[/bold cyan] Enter a name for this server"
+        )
+        name = name.strip()
+    except (KeyboardInterrupt, EOFError):
+        ui.console.print("\n[dim]Cancelled.[/dim]")
+        return
+
+    if not name:
+        ui.error("Name cannot be empty.")
+        return
+
+    # ── Step 2: JSON config ───────────────────────────────────────────────────
+    ui.console.print(
+        f"\n[bold cyan]  Step 2[/bold cyan] Paste the JSON config for [bold]{name}[/bold]\n"
+        "[dim]  Example:[/dim]\n"
+        '[dim]  {"mcpServers":{"'
+        + name
+        + '":{"command":"npx","args":["-y","your-mcp-pkg@latest"]}}}'
+        "[/dim]\n"
+    )
+    try:
+        raw_cfg = await asyncio.to_thread(
+            Prompt.ask, "[bold cyan]  Config[/bold cyan]"
+        )
+        raw_cfg = raw_cfg.strip()
+    except (KeyboardInterrupt, EOFError):
+        ui.console.print("\n[dim]Cancelled.[/dim]")
+        return
+
+    if not raw_cfg:
+        ui.error("Config cannot be empty.")
+        return
+
+    # ── Parse the pasted config ───────────────────────────────────────────────
+    json_start = raw_cfg.find("{")
+    if json_start == -1:
+        ui.error("No JSON object found in the pasted config.")
+        return
+
+    try:
+        data = json.loads(raw_cfg[json_start:])
+    except json.JSONDecodeError as exc:
+        ui.error(f"Invalid JSON: {exc}")
+        return
+
+    # Normalise: extract command/url for the named server
+    server_cfg: dict = {}
+
+    if "mcpServers" in data:
+        # {"mcpServers": {"name": {...}}}  — use the server matching 'name', or first entry
+        servers_map = data["mcpServers"]
+        if name in servers_map:
+            server_cfg = servers_map[name]
+        elif servers_map:
+            # User gave a different name — just take the first entry and use their chosen name
+            server_cfg = next(iter(servers_map.values()))
+    elif name in data:
+        server_cfg = data[name]
+    elif "command" in data or "url" in data:
+        server_cfg = data
+    elif isinstance(data, dict) and all(isinstance(v, dict) for v in data.values()):
+        server_cfg = next(iter(data.values()))
+    else:
+        server_cfg = data
+
+    url = server_cfg.get("url")
+    command_str = server_cfg.get("command")
+    args = server_cfg.get("args", [])
+    env = server_cfg.get("env", {})
+    command = [command_str] + list(args) if command_str else None
+
+    if not url and not command:
+        ui.error("Config must contain either a 'url' or a 'command' field.")
+        return
+
+    # ── Connect & save ────────────────────────────────────────────────────────
+    ui.console.print()
+    with ui.spinner(f"Saving and connecting to [bold]{name}[/bold]..."):
+        connected = await mcp_manager.add_server(name=name, url=url, command=command, env=env)
+
+    if connected:
+        tools_count = len(mcp_manager.servers[name].tools)
+        ui.success(f"Connected to [bold]{name}[/bold] — {tools_count} tools available.")
+    else:
+        ui.warning(
+            f"[bold]{name}[/bold] saved but could not connect right now.\n"
+            "  It will be auto-retried on next startup.\n"
+            "  Tip: use [bold]mcp list[/bold] to check status."
+        )
+
+
+async def _handle_mcp_use():
+    """Interactive MCP server selector: list saved servers → pick one → run a prompt with it."""
+    from omega.mcp.manager import mcp_manager
+
+    # ── Load all saved servers (connected or not) ─────────────────────────────
+    saved = await mcp_manager.list_saved_servers()
+    if not saved:
+        ui.console.print(
+            "[dim]No MCP servers saved yet.[/dim]\n"
+            "[dim]Use [bold]mcp add[/bold] to add one.[/dim]"
+        )
+        return
+
+    # ── Display server list ───────────────────────────────────────────────────
+    ui.console.print("\n[bold cyan]Saved MCP Servers[/bold cyan]\n")
+    for i, srv in enumerate(saved, 1):
+        srv_name = srv["name"]
+        is_live = srv_name in mcp_manager.servers and mcp_manager.servers[srv_name].connected
+        status_tag = "[green]● live[/green]" if is_live else "[dim]○ saved[/dim]"
+        cmd = srv.get("command", [])
+        detail = " ".join(cmd[:3]) + ("..." if len(cmd) > 3 else "") if cmd else srv.get("url", "")
+        ui.console.print(
+            f"  [bold cyan]{i}.[/bold cyan] {status_tag} [bold]{srv_name}[/bold]"
+            + (f"  [dim]{detail}[/dim]" if detail else "")
+        )
+    ui.console.print()
+
+    # ── Pick a server ─────────────────────────────────────────────────────────
+    try:
+        choice_raw = await asyncio.to_thread(
+            Prompt.ask, "[bold cyan]Select server[/bold cyan] [dim](number)[/dim]"
+        )
+        choice = int(choice_raw.strip()) - 1
+        if not (0 <= choice < len(saved)):
+            ui.error("Invalid selection.")
+            return
+    except (ValueError, KeyboardInterrupt, EOFError):
+        ui.console.print("[dim]Cancelled.[/dim]")
+        return
+
+    selected = saved[choice]
+    server_name = selected["name"]
+
+    # ── Ensure the server is connected ────────────────────────────────────────
+    is_live = server_name in mcp_manager.servers and mcp_manager.servers[server_name].connected
+    if not is_live:
+        with ui.spinner(f"Connecting to [bold]{server_name}[/bold]..."):
+            await mcp_manager.add_server(
+                name=server_name,
+                url=selected.get("url"),
+                command=selected.get("command"),
+                env=selected.get("env", {}),
+            )
+
+    server = mcp_manager.servers.get(server_name)
+    connected = server and server.connected
+
+    if connected:
+        tools = server.tools
+        tool_names = ", ".join(t.get("name", "?") for t in tools[:6])
+        suffix = "..." if len(tools) > 6 else ""
+        ui.console.print(
+            f"\n[green]✓[/green] Connected to [bold]{server_name}[/bold] "
+            f"— {len(tools)} tool(s)"
+            + (f": [dim]{tool_names}{suffix}[/dim]" if tool_names else "")
+        )
+    else:
+        ui.warning(
+            f"Could not connect to [bold]{server_name}[/bold] right now, "
+            "but will try to use it anyway."
+        )
+
+    # ── Get the user's prompt ─────────────────────────────────────────────────
+    ui.console.print()
+    try:
+        goal = await asyncio.to_thread(
+            Prompt.ask,
+            f"[bold cyan]omega[/bold cyan] [dim][{server_name}][/dim] [dim]›[/dim]",
+        )
+        goal = goal.strip()
+    except (KeyboardInterrupt, EOFError):
+        ui.console.print("[dim]Cancelled.[/dim]")
+        return
+
+    if not goal:
+        return
+
+    # Augment the prompt to force the AI to use the MCP server tools
+    augmented_goal = (
+        f"{goal}\n\n"
+        f"(SYSTEM INSTRUCTION: You MUST use the tools provided by the connected "
+        f"MCP server '{server_name}' to complete this task. Prioritize these MCP tools "
+        f"over default OS commands. If browsing the web, you must use the {server_name} browser tools.)"
+    )
+
+    # ── Execute the goal (MCP server is now active in the registry) ───────────
+    await _execute_goal_flow(augmented_goal)
+
+
+async def _handle_mcp_add(raw: str):
+
+    """Handle 'mcp add' — supports JSON config blocks and plain 'name url' syntax.
+
+    Accepted JSON formats:
+      {"mcpServers": {"server-name": {"command": "npx", "args": [...], "env": {...}}}}
+      {"server-name": {"command": "npx", "args": [...]}}
+      {"name": "server-name", "command": "npx", "args": [...]}
+      {"name": "server-name", "url": "http://..."}
+    Plain text:
+      <name> <url>
+    """
+    from omega.mcp.manager import mcp_manager
+
+    # ── Try to parse as JSON ──────────────────────────────────────────────────
+    json_start = raw.find("{")
+    if json_start != -1:
+        json_str = raw[json_start:]
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as exc:
+            ui.error(f"Invalid JSON: {exc}")
+            return
+
+        # Normalise to a list of server dicts: [{name, url?, command?, args?, env?}]
+        server_entries = []
+
+        if "mcpServers" in data:
+            # Standard Claude/Cursor format
+            for srv_name, srv_cfg in data["mcpServers"].items():
+                entry = {"name": srv_name, **srv_cfg}
+                server_entries.append(entry)
+        elif isinstance(data, dict) and all(isinstance(v, dict) for v in data.values()):
+            # Bare dict of servers without the "mcpServers" wrapper
+            for srv_name, srv_cfg in data.items():
+                entry = {"name": srv_name, **srv_cfg}
+                server_entries.append(entry)
+        else:
+            # Single server object: {"name": ..., "url": ...} or {"name": ..., "command": ...}
+            server_entries.append(data)
+
+        if not server_entries:
+            ui.error("No server entries found in JSON config.")
+            return
+
+        added, failed = [], []
+        for entry in server_entries:
+            srv_name = entry.get("name")
+            if not srv_name:
+                ui.error("Server entry is missing a 'name' field — skipping.")
+                continue
+
+            url = entry.get("url")
+            args = entry.get("args", [])
+            command_str = entry.get("command")
+            env = entry.get("env", {})
+
+            # Build the command list: ["npx", "-y", "chrome-devtools-mcp@latest"]
+            command = None
+            if command_str:
+                command = [command_str] + list(args)
+
+            connected = await mcp_manager.add_server(
+                name=srv_name, url=url, command=command, env=env
+            )
+            if connected:
+                added.append(srv_name)
+            else:
+                failed.append(srv_name)
+
+        for n in added:
+            ui.success(f"Connected to MCP server: {n}")
+        for n in failed:
+            ui.error(f"Could not connect to MCP server: {n} (saved for later auto-connect)")
+        return
+
+    # ── Plain text: <name> <url> ──────────────────────────────────────────────
+    parts = raw.split()
+    if len(parts) >= 2:
+        name, url = parts[0], parts[1]
+        connected = await mcp_manager.add_server(name=name, url=url)
+        if connected:
+            ui.success(f"Connected to MCP server: {name}")
+        else:
+            ui.error(f"Could not connect to MCP server: {name} (saved for later auto-connect)")
+    else:
+        ui.error(
+            "Usage:  mcp add <name> <url>\n"
+            "        mcp add '{\"mcpServers\":{\"name\":{\"command\":\"npx\",\"args\":[\"-y\",\"pkg@latest\"]}}}'"
+        )
 
 
 async def _execute_goal_flow(goal: str):

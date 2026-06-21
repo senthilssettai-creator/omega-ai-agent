@@ -23,7 +23,7 @@ You must output ONLY valid JSON in this exact format:
       "id": "task_1",
       "name": "Task name",
       "description": "Detailed description",
-      "agent": "which agent handles this (planner/researcher/coder/browser/devops/executor)",
+      "agent": "which agent handles this (planner/researcher/coder/browser/devops/executor/mcp)",
       "depends_on": [],
       "priority": 1,
       "estimated_minutes": 5,
@@ -41,6 +41,7 @@ Available agents:
 - browser: browser automation, web scraping
 - devops: docker, git, deployment
 - executor: terminal commands, file operations
+- mcp: selected when user wants to run or interact using configured MCP tools
 - memory: storing/retrieving knowledge
 
 Make tasks specific, actionable, and appropriately scoped.

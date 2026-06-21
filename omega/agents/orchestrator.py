@@ -62,6 +62,7 @@ class Orchestrator:
         from omega.agents.browser import BrowserAgent
         from omega.agents.devops import DevOpsAgent
         from omega.agents.critic import CriticAgent
+        from omega.agents.mcp import MCPAgent
 
         self._agents = {
             "planner": PlannerAgent(),
@@ -71,6 +72,7 @@ class Orchestrator:
             "browser": BrowserAgent(),
             "devops": DevOpsAgent(),
             "critic": CriticAgent(),
+            "mcp": MCPAgent(),
         }
 
     def get_agent(self, name: str):

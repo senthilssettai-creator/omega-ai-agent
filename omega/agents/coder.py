@@ -15,6 +15,19 @@ from omega.models.router import TaskType
 logger = structlog.get_logger(__name__)
 
 
+def infer_app_name(task: str) -> str:
+    import re
+    # Remove common coding prompt prefixes
+    clean_task = re.sub(r'^(create|make|build|generate|write|code|develop)\s+(a|an|the)?\s*', '', task, flags=re.IGNORECASE)
+    # Get first 4 words
+    words = re.findall(r'\b\w+\b', clean_task)
+    if words:
+        slug = "_".join(words[:4]).lower()
+        slug = re.sub(r'[^a-z0-9_]', '', slug)
+        return slug or "app"
+    return "app"
+
+
 class CoderAgent(BaseAgent):
     name = "coder"
     description = "Writes, debugs, tests, and reviews code in any language"
@@ -55,6 +68,13 @@ When creating files, output JSON:
 
         # Get relevant context
         project_path = context.get("project_path", ".")
+        if project_path == "." or project_path == os.getcwd():
+            app_name = infer_app_name(task)
+            project_path = os.path.abspath(os.path.join(os.getcwd(), "apps", app_name))
+            context["project_path"] = project_path
+            from omega.ui.terminal import ui
+            ui.info(f"Creating/using isolated workspace: [bold]{project_path}[/bold]")
+
         language = context.get("language", "python")
         existing_code = context.get("existing_code", "")
 

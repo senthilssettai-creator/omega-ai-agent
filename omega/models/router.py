@@ -89,7 +89,7 @@ class ModelRouter:
         temperature: float = 0.7,
         stream: bool = False,
     ) -> Dict[str, Any]:
-        """Send a completion request to OpenRouter"""
+        """Send a completion request to OpenRouter with robust retries"""
         if not task_type:
             task_type = self.infer_task_type(messages, system)
 
@@ -104,31 +104,39 @@ class ModelRouter:
             "stream": stream,
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        max_retries = 5
+        backoff = 2.0
+        for attempt in range(max_retries):
             try:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers=self._get_headers(),
-                    json=payload,
-                )
-                response.raise_for_status()
-                data = response.json()
-                self._model_health[selected_model] = True
-                return {
-                    "content": data["choices"][0]["message"]["content"],
-                    "model": data.get("model", selected_model),
-                    "usage": data.get("usage", {}),
-                    "task_type": task_type,
-                }
-            except httpx.HTTPStatusError as e:
-                self._model_health[selected_model] = False
-                logger.error("openrouter_error", status=e.response.status_code, model=selected_model)
-                if selected_model != self.fallback:
-                    return await self.complete(
-                        messages, system, task_type, self.fallback,
-                        max_tokens, temperature, stream
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers=self._get_headers(),
+                        json=payload,
                     )
-                raise
+                    response.raise_for_status()
+                    data = response.json()
+                    self._model_health[selected_model] = True
+                    return {
+                        "content": data["choices"][0]["message"]["content"],
+                        "model": data.get("model", selected_model),
+                        "usage": data.get("usage", {}),
+                        "task_type": task_type,
+                    }
+            except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.NetworkError) as e:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                logger.warning("api_call_failed_retrying", attempt=attempt+1, error=str(e), status_code=status_code)
+                if attempt == max_retries - 1:
+                    self._model_health[selected_model] = False
+                    if selected_model != self.fallback:
+                        logger.info("falling_back_to_fallback_model", fallback=self.fallback)
+                        return await self.complete(
+                            messages, system, task_type, self.fallback,
+                            max_tokens, temperature, stream
+                        )
+                    raise
+                await asyncio.sleep(backoff)
+                backoff *= 2.0
 
     async def stream_complete(
         self,
@@ -139,7 +147,7 @@ class ModelRouter:
         max_tokens: int = 4096,
         temperature: float = 0.7,
     ) -> AsyncIterator[str]:
-        """Stream a completion response token by token"""
+        """Stream a completion response token by token with robust retries"""
         if not task_type:
             task_type = self.infer_task_type(messages, system)
 
@@ -153,27 +161,49 @@ class ModelRouter:
             "stream": True,
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers=self._get_headers(),
-                json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            import json
-                            data = json.loads(data_str)
-                            delta = data["choices"][0]["delta"].get("content", "")
-                            if delta:
-                                yield delta
-                        except Exception:
-                            continue
+        max_retries = 5
+        backoff = 2.0
+        for attempt in range(max_retries):
+            try:
+                client = httpx.AsyncClient(timeout=120.0)
+                async with client:
+                    async with client.stream(
+                        "POST",
+                        f"{self.base_url}/chat/completions",
+                        headers=self._get_headers(),
+                        json=payload,
+                    ) as response:
+                        response.raise_for_status()
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                data_str = line[6:]
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    import json
+                                    data = json.loads(data_str)
+                                    delta = data["choices"][0]["delta"].get("content", "")
+                                    if delta:
+                                        yield delta
+                                except Exception:
+                                    continue
+                        # Successfully finished streaming, exit function
+                        return
+            except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.NetworkError) as e:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                logger.warning("stream_api_call_failed_retrying", attempt=attempt+1, error=str(e), status_code=status_code)
+                if attempt == max_retries - 1:
+                    if selected_model != self.fallback:
+                        logger.info("falling_back_to_fallback_model_stream", fallback=self.fallback)
+                        async for chunk in self.stream_complete(
+                            messages, system, task_type, self.fallback,
+                            max_tokens, temperature
+                        ):
+                            yield chunk
+                        return
+                    raise
+                await asyncio.sleep(backoff)
+                backoff *= 2.0
 
     async def list_free_models(self) -> List[Dict]:
         """Fetch available free models from OpenRouter"""

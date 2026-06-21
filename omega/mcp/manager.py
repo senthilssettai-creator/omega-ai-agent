@@ -59,14 +59,36 @@ class MCPServer:
         """Connect to stdio-based MCP server"""
         try:
             import os
+            import shutil
             env = {**os.environ, **self.env}
+            
+            cmd_list = list(self.command)
+            if cmd_list:
+                resolved = shutil.which(cmd_list[0])
+                if resolved:
+                    cmd_list[0] = resolved
+
             self._process = subprocess.Popen(
-                self.command,
+                cmd_list,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
             )
+            
+            # Stream stderr to console so user can see installation progress
+            def stream_stderr():
+                import sys
+                while self._process and self._process.poll() is None:
+                    line = self._process.stderr.readline()
+                    if not line:
+                        break
+                    sys.stderr.write(f"[{self.name}] {line.decode('utf-8', errors='replace')}")
+                    sys.stderr.flush()
+            
+            import asyncio
+            asyncio.get_event_loop().run_in_executor(None, stream_stderr)
+
             # Send initialize request
             init_request = json.dumps({
                 "jsonrpc": "2.0",
@@ -78,22 +100,25 @@ class MCPServer:
                     "capabilities": {},
                 }
             }) + "\n"
-
             self._process.stdin.write(init_request.encode())
             self._process.stdin.flush()
 
             # Read response (non-blocking with timeout)
-            import select
-            ready = select.select([self._process.stdout], [], [], 5.0)
-            if ready[0]:
-                response_line = self._process.stdout.readline()
-                response = json.loads(response_line)
-                if "result" in response:
-                    # List tools
-                    await self._list_tools_stdio()
-                    self._connected = True
-                    logger.info("mcp_stdio_connected", server=self.name)
-                    return True
+            try:
+                response_line = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, self._process.stdout.readline),
+                    timeout=120.0
+                )
+                if response_line:
+                    response = json.loads(response_line)
+                    if "result" in response:
+                        # List tools
+                        await self._list_tools_stdio()
+                        self._connected = True
+                        logger.info("mcp_stdio_connected", server=self.name)
+                        return True
+            except asyncio.TimeoutError:
+                pass
         except Exception as e:
             logger.warning("mcp_stdio_connect_failed", server=self.name, error=str(e))
         return False
@@ -110,12 +135,17 @@ class MCPServer:
             self._process.stdin.write(request.encode())
             self._process.stdin.flush()
 
-            import select
-            ready = select.select([self._process.stdout], [], [], 5.0)
-            if ready[0]:
-                response_line = self._process.stdout.readline()
-                response = json.loads(response_line)
-                self._tools = response.get("result", {}).get("tools", [])
+            import asyncio
+            try:
+                response_line = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, self._process.stdout.readline),
+                    timeout=5.0
+                )
+                if response_line:
+                    response = json.loads(response_line)
+                    self._tools = response.get("result", {}).get("tools", [])
+            except asyncio.TimeoutError:
+                pass
         except Exception as e:
             logger.warning("mcp_list_tools_failed", server=self.name, error=str(e))
 
@@ -146,12 +176,17 @@ class MCPServer:
             self._process.stdin.write(request.encode())
             self._process.stdin.flush()
 
-            import select
-            ready = select.select([self._process.stdout], [], [], 30.0)
-            if ready[0]:
-                response_line = self._process.stdout.readline()
-                response = json.loads(response_line)
-                return response.get("result")
+            import asyncio
+            try:
+                response_line = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, self._process.stdout.readline),
+                    timeout=30.0
+                )
+                if response_line:
+                    response = json.loads(response_line)
+                    return response.get("result")
+            except asyncio.TimeoutError:
+                pass
         except Exception as e:
             logger.error("mcp_call_failed", tool=tool_name, error=str(e))
         return None
@@ -196,13 +231,27 @@ class MCPManager:
     async def add_server(self, name: str, url: Optional[str] = None,
                           command: Optional[List[str]] = None,
                           env: Optional[Dict] = None) -> bool:
-        """Add and connect to a new MCP server"""
+        """Add and connect to a new MCP server, persisting the config either way."""
         server = MCPServer(name=name, url=url, command=command, env=env or {})
-        if await server.connect():
+        connected = await server.connect()
+        if connected:
             self._servers[name] = server
-            await self._save_config()
-            return True
-        return False
+        else:
+            # Store a disconnected placeholder so the config is persisted and
+            # auto_discover can retry on the next startup.
+            placeholder = MCPServer(name=name, url=url, command=command, env=env or {})
+            self._servers.setdefault(name, placeholder)
+        await self._save_config()
+        return connected
+
+    async def remove_server(self, name: str) -> bool:
+        """Remove an MCP server by name, disconnect it, and persist the config."""
+        server = self._servers.pop(name, None)
+        if server is None:
+            return False
+        server.disconnect()
+        await self._save_config()
+        return True
 
     async def _save_config(self):
         """Save server configs to disk"""
@@ -217,6 +266,13 @@ class MCPManager:
         self._config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._config_path, "w") as f:
             json.dump(configs, f, indent=2)
+
+    async def list_saved_servers(self) -> List[Dict]:
+        """Return all server configs persisted on disk (connected or not)."""
+        if self._config_path.exists():
+            with open(self._config_path) as f:
+                return json.load(f)
+        return []
 
     async def call_tool(self, server_name: str, tool_name: str, arguments: Dict) -> Any:
         """Call a tool on a specific MCP server"""

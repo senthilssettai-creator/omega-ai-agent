@@ -73,28 +73,43 @@ Rules:
 - Always verify your work before declaring success"""
 
     async def think(self, messages: List[Dict]) -> str:
-        """Query the LLM with appropriate model selection (non-streaming)"""
+        """Query the LLM with appropriate model selection (streaming for live view)"""
         self.status = AgentStatus.THINKING
-        try:
-            result = await router.complete(
-                messages=messages,
-                system=self.system_prompt,
-                task_type=self.task_type,
-            )
-            return result["content"]
-        finally:
-            self.status = AgentStatus.IDLE
-
-    async def think_stream(self, messages: List[Dict]) -> AsyncIterator[str]:
-        """Query the LLM with streaming output"""
-        self.status = AgentStatus.THINKING
+        from omega.ui.terminal import ui
+        
+        # We print a header indicating the agent is thinking live
+        header = f"\n[dim][{self.name.upper()} thinking][/dim] "
+        ui.console.print(header, end="")
+        
+        full_content = []
         try:
             async for chunk in router.stream_complete(
                 messages=messages,
                 system=self.system_prompt,
                 task_type=self.task_type,
             ):
+                ui.console.print(chunk, end="", style="dim white")
+                full_content.append(chunk)
+            ui.console.print("\n")
+            return "".join(full_content)
+        finally:
+            self.status = AgentStatus.IDLE
+
+    async def think_stream(self, messages: List[Dict]) -> AsyncIterator[str]:
+        """Query the LLM with streaming output and show live thinking"""
+        self.status = AgentStatus.THINKING
+        from omega.ui.terminal import ui
+        header = f"\n[dim][{self.name.upper()} thinking][/dim] "
+        ui.console.print(header, end="")
+        try:
+            async for chunk in router.stream_complete(
+                messages=messages,
+                system=self.system_prompt,
+                task_type=self.task_type,
+            ):
+                ui.console.print(chunk, end="", style="dim white")
                 yield chunk
+            ui.console.print("\n")
         finally:
             self.status = AgentStatus.IDLE
 
