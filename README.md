@@ -45,7 +45,7 @@ Follow these steps to install, configure, and run OMEGA on your machine:
 ### 1. Clone the Repository
 Open your terminal (PowerShell on Windows, Bash on Linux/macOS) and run:
 ```powershell
-git clone <repo-url> omega
+git clone https://github.com/senthilssettai-creator/omega-ai-agent omega
 cd omega
 ```
 
